@@ -61,9 +61,9 @@ EOF
 
 # Image references come from the installed microshift-release-info RPM so they
 # match this MicroShift build. --all keeps manifest-list digests intact.
-#RUN --mount=type=secret,id=pullsecret,dst=/tmp/pull-secret.json \
-#    images="$(jq -r '.images[]' /usr/share/microshift/release/release-"$(uname -m)".json)" && \
-#    test -n "${images}" && \
-#    for img in ${images}; do \
-#        /usr/bin/embed_image.sh "${img}" --all ; \
-#    done
+RUN --mount=type=secret,id=pullsecret,dst=/tmp/pull-secret.json \
+    images="$(jq -r '.images[]' /usr/share/microshift/release/release-"$(uname -m)".json)" && \
+    test -n "${images}" && \
+    for img in ${images}; do \
+        /usr/bin/embed_image.sh "${img}" --all ; \
+    done

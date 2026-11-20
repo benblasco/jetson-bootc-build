@@ -65,6 +65,8 @@ MicroShift LVMS looks for a volume group named `rhel`. `/` is a fixed 20 GB logi
 
 Place a pull secret at `pull-secret.json` in this directory. That file is gitignored. A Podman build secret has to be a file, and `/etc/pki/entitlement` is a directory, so pass the certificate and key separately.
 
+GitHub Actions writes the repository secret `OPENSHIFT_PULL_SECRET` to `/tmp/pull-secret.json` and passes it to buildah as `id=pullsecret` (see `.github/workflows/build_rhel_bootc.yml`).
+
 ```bash
 CERT=$(ls /etc/pki/entitlement/[0-9]*.pem | grep -v -- '-key.pem' | head -n1)
 KEY=$(ls /etc/pki/entitlement/[0-9]*-key.pem | head -n1)

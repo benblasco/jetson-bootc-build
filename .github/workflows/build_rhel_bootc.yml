@@ -85,6 +85,16 @@ jobs:
           cp "$CERT" /tmp/entitlement-cert.pem
           cp "$KEY" /tmp/entitlement-key.pem
 
+      # MicroShift image prefetch uses skopeo --authfile; mount as build secret (not a layer).
+      - name: Stage OpenShift pull secret for buildah
+        env:
+          OPENSHIFT_PULL_SECRET: ${{ secrets.OPENSHIFT_PULL_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$OPENSHIFT_PULL_SECRET"
+          printf '%s' "$OPENSHIFT_PULL_SECRET" > /tmp/pull-secret.json
+          chmod 600 /tmp/pull-secret.json
+
       # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
       - name: Workaround open podman-login action issue
         env:
@@ -113,6 +123,8 @@ jobs:
             id=entitlement-cert,src=/tmp/entitlement-cert.pem
             --secret
             id=entitlement-key,src=/tmp/entitlement-key.pem
+            --secret
+            id=pullsecret,src=/tmp/pull-secret.json
 
       - name: Log in to the GitHub Container registry
         uses: redhat-actions/podman-login@v2
@@ -133,5 +145,5 @@ jobs:
       - name: Clean up the subscription
         if: always()
         run: |
-          rm -f /tmp/entitlement-cert.pem /tmp/entitlement-key.pem
+          rm -f /tmp/entitlement-cert.pem /tmp/entitlement-key.pem /tmp/pull-secret.json
           subscription-manager unregister
