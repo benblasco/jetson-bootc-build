@@ -1,0 +1,141 @@
+name: Build RHEL bootc ISO installer image with GHA
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+    # branches:
+    #   - '**'
+jobs:
+
+  rhel-bootc-iso-build:
+    name: Build RHEL bootc ISO image with repo access
+    # ubuntu-latest can land on kernel 7.0 runners, which break osbuild
+    # container-deploy (mount permission denied). See osbuild/osbuild#2579.
+    runs-on: ubuntu-24.04
+    env:
+      SMDEV_CONTAINER_OFF: 1
+      SOURCE_REGISTRY_HOST: registry.redhat.io
+      BIB_IMAGE: registry.redhat.io/rhel10/bootc-image-builder:latest
+      SOURCE_CONTAINER_REGISTRY: ghcr.io
+      SOURCE_CONTAINER_IMAGE: "${{ github.actor }}/${{ github.event.repository.name }}"
+      SOURCE_CONTAINER_IMAGE_TAG: main
+      DEST_REGISTRY_HOST: ghcr.io
+
+    container:
+      image: registry.access.redhat.com/ubi10/ubi
+      options: --privileged
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Clone the repository
+        uses: actions/checkout@v5
+
+      - name: Get container tools in UBI builder
+        run: dnf -y install podman skopeo
+
+      # This job uses `container:` so GitHub runs it inside Docker on the runner.
+      # Podman's default overlay driver cannot nest without a FUSE mount helper.
+      - name: Configure Podman storage for nested GitHub Actions job container
+        run: |
+          dnf -y install fuse-overlayfs
+          mkdir -p /etc/containers
+          cat > /etc/containers/storage.conf <<'EOF'
+          [storage]
+          driver = "overlay"
+          graphroot = "/var/lib/containers/storage"
+          runroot = "/run/containers/storage"
+
+          [storage.options.overlay]
+          mount_program = "/usr/bin/fuse-overlayfs"
+          EOF
+          podman info -f '{{.Store.GraphDriverName}}'
+
+      - name: Access a subscription via activation key
+        run: subscription-manager register --org=${{ secrets.RHT_ORGID }} --activationkey=${{ secrets.RHT_ACT_KEY }}
+
+      # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
+      - name: Workaround open podman-login action issue
+        env:
+          auth: "{ \"auths\": {} }"
+        run: |
+          mkdir -p $HOME/.docker
+          echo $auth > $HOME/.docker/config.json
+
+      - name: Log in to the RHT terms based registry
+        uses: redhat-actions/podman-login@v2
+        with:
+          registry: ${{ env.SOURCE_REGISTRY_HOST }}
+          username: ${{ secrets.SOURCE_REGISTRY_USER }}
+          password: ${{ secrets.SOURCE_REGISTRY_PASSWORD }}
+          auth_file_path: /run/containers/0/auth.json
+
+      - name: Log in to ghcr.io for bootc source image
+        uses: redhat-actions/podman-login@v2
+        with:
+          registry: ${{ env.DEST_REGISTRY_HOST }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          auth_file_path: /run/containers/0/auth.json
+
+      # bootc-image-builder-action does not pass host RHSM entitlements; BIB must
+      # depsolve cdn.redhat.com when building ISOs from RHEL bootc images.
+      - name: Build ISO installer disk image
+        env:
+          BOOTC_IMAGE: "${{ env.SOURCE_CONTAINER_REGISTRY }}/${{ env.SOURCE_CONTAINER_IMAGE }}:${{ env.SOURCE_CONTAINER_IMAGE_TAG }}"
+        run: |
+          set -euo pipefail
+          # In job containers, github.workspace is the *host* path (/home/runner/work/...)
+          # but steps run under GITHUB_WORKSPACE (/__w/...). Podman statfs bind sources
+          # from inside the job container, so use GITHUB_WORKSPACE for volume mounts.
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          # UBI's entitlement-host is a symlink to /run/secrets/etc-pki-entitlement
+          # (empty until a host passthrough). Podman statfs fails on that bind source;
+          # mirror registered certs into a real directory for BIB.
+          if [[ -L /etc/pki/entitlement-host ]]; then
+            rm -f /etc/pki/entitlement-host
+          fi
+          mkdir -p /etc/pki/entitlement-host
+          if compgen -G '/etc/pki/entitlement/*' > /dev/null; then
+            cp -a /etc/pki/entitlement/. /etc/pki/entitlement-host/
+          fi
+          podman pull --policy newer "${{ env.BIB_IMAGE }}"
+          podman pull --policy newer "$BOOTC_IMAGE"
+          podman run --rm --privileged \
+            --pull=newer \
+            --security-opt label=type:unconfined_t \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v /run/containers/storage:/run/containers/storage \
+            -v /etc/containers/storage.conf:/etc/containers/storage.conf:ro \
+            -v /usr/bin/fuse-overlayfs:/usr/bin/fuse-overlayfs:ro \
+            -v "$GITHUB_WORKSPACE/output:/output" \
+            -v "$GITHUB_WORKSPACE/config.toml:/config.toml:ro" \
+            -v /etc/pki:/etc/pki:ro \
+            -v /etc/rhsm:/etc/rhsm:ro \
+            "${{ env.BIB_IMAGE }}" \
+            build --output /output --type iso "$BOOTC_IMAGE"
+          chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/output"
+          iso="$(find "$GITHUB_WORKSPACE/output" -type f -name '*.iso' -print -quit)"
+          if [[ -z "$iso" ]]; then
+            echo "::error::No .iso found under output/"
+            find "$GITHUB_WORKSPACE/output" -type f || true
+            exit 1
+          fi
+          echo "Built ISO: $iso"
+          mkdir -p "$GITHUB_WORKSPACE/output/artifact"
+          cp -f "$iso" "$GITHUB_WORKSPACE/output/artifact/installer.iso"
+
+      - name: Clean up the subscription
+        if: always()
+        run: subscription-manager unregister
+
+      - name: Upload ISO installer disk image as artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: rhel-images
+          path: output/artifact/installer.iso
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
