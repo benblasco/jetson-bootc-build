@@ -8,7 +8,7 @@ on:
 jobs:
   rhel-bootc-image-build:
     name: Build RHEL bootc image with repo access
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     env:
       # Disable Subscription Manager container passthrough
       SMDEV_CONTAINER_OFF: 1
@@ -51,7 +51,7 @@ jobs:
       - name: Get container tools in UBI builder
         run: dnf -y install podman buildah skopeo
 
-      # This job uses `container:` so GitHub runs it inside Docker on ubuntu-latest.
+      # This job uses `container:` so GitHub runs it inside Docker on the ARM runner host.
       # The job rootfs is already overlayfs; Podman's default overlay driver cannot nest
       # without a FUSE mount helper. podman-login, buildah-build, and push-to-registry
       # all need working container storage before registry login or image build.
