@@ -73,6 +73,16 @@ jobs:
       - name: Access a subscription via activation key
         run: subscription-manager register --org=${{ secrets.RHT_ORGID }} --activationkey=${{ secrets.RHT_ACT_KEY }}
 
+      # Containerfile installs MicroShift from CDN repos authenticated with these certs.
+      # SMDEV_CONTAINER_OFF keeps host entitlements out of the image rootfs; mount them as build secrets.
+      - name: Stage RHSM entitlement PEMs for buildah
+        run: |
+          set -euo pipefail
+          CERT="$(ls /etc/pki/entitlement/[0-9]*.pem | grep -v -- '-key.pem' | head -n1)"
+          KEY="$(ls /etc/pki/entitlement/[0-9]*-key.pem | head -n1)"
+          cp "$CERT" "$GITHUB_WORKSPACE/entitlement-cert.pem"
+          cp "$KEY" "$GITHUB_WORKSPACE/entitlement-key.pem"
+
       # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
       - name: Workaround open podman-login action issue
         env:
@@ -96,6 +106,11 @@ jobs:
           image: ${{ env.DEST_IMAGE }}
           tags: ${{ env.TAGLIST }}
           containerfiles: ${{ env.CONTAINERFILE }}
+          extra-args: |
+            --secret
+            id=entitlement-cert,src=${{ github.workspace }}/entitlement-cert.pem
+            --secret
+            id=entitlement-key,src=${{ github.workspace }}/entitlement-key.pem
 
       - name: Log in to the GitHub Container registry
         uses: redhat-actions/podman-login@v2
@@ -115,4 +130,6 @@ jobs:
 
       - name: Clean up the subscription
         if: always()
-        run: subscription-manager unregister
+        run: |
+          rm -f "$GITHUB_WORKSPACE/entitlement-cert.pem" "$GITHUB_WORKSPACE/entitlement-key.pem"
+          subscription-manager unregister

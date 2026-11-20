@@ -3,3 +3,5 @@ hosts
 group_vars/all/registry_credential.yml
 output/
 pull-secret.json
+entitlement-cert.pem
+entitlement-key.pem

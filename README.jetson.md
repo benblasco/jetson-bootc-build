@@ -61,7 +61,7 @@ MicroShift LVMS looks for a volume group named `rhel`. `/` is a fixed 20 GB logi
 
 ## Build the MicroShift image
 
-`Containerfile` installs MicroShift from the RHEL 9 `rhocp/4.22` and `fast-datapath` repositories, then embeds every image listed by the `microshift-release-info` package. `embed_image.sh` stores each image under `/usr/lib/containers-image-cache` with `skopeo copy --preserve-digests`, and records the reference in `mapping.txt`. The pull secret and the host entitlement are mounted as build secrets and are not written into the image.
+`Containerfile` installs MicroShift from the layered `rhocp/4.22` and `fast-datapath` CDN repositories under the `rhel9` content tree (per Red Hat’s RHEL 10 workaround), even though the base image is RHEL 10. The build uses entitlement PEMs as Podman/buildah secrets instead of subscription-manager repo IDs. `embed_image.sh` stores each image under `/usr/lib/containers-image-cache` with `skopeo copy --preserve-digests`, and records the reference in `mapping.txt`. The pull secret and the host entitlement are mounted as build secrets and are not written into the image.
 
 Place a pull secret at `pull-secret.json` in this directory. That file is gitignored. A Podman build secret has to be a file, and `/etc/pki/entitlement` is a directory, so pass the certificate and key separately.
 

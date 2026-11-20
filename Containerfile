@@ -4,21 +4,47 @@ FROM registry.redhat.io/nvidia/nvidia-jetpack-for-rhel10:7.2.1_6.12.0-211.72.1_1
 # Note: file permissions from the repo are preserved
 COPY files/ /
 
-# Enable the microshift-related and RHEL EUS repos
-# MicroShift 4.22 is published in the RHEL 9 rhocp and fast-datapath repositories.
-# Note: RHEL EUS repos only available if customer has EUS subscription
-RUN <<EOF
+# Install MicroShift from layered rhocp/fast-datapath CDN repos (rhel9 tree on CDN).
+# RHEL 10 cannot enable RHEL 9 repo IDs via subscription-manager; pass host
+# entitlements as build secrets (see README.jetson.md and build_rhel_bootc.yml).
+RUN --mount=type=secret,id=entitlement-cert \
+    --mount=type=secret,id=entitlement-key \
+<<EOF
 set -euo pipefail
 
-# Grab the system architecture e.g. x86_64 etc.
 ARCH="$(uname -m)"
+CERT=/run/secrets/entitlement-cert
+KEY=/run/secrets/entitlement-key
 
-dnf config-manager --set-enabled \
-  rhocp-4.22-for-rhel-9-${ARCH}-rpms \
-  fast-datapath-for-rhel-9-${ARCH}-rpms \
+cat > /etc/yum.repos.d/microshift-rhocp.repo <<REPO
+[rhocp-4.22]
+name=Red Hat OpenShift 4.22 for RHEL 9
+baseurl=https://cdn.redhat.com/content/dist/layered/rhel9/${ARCH}/rhocp/4.22/os
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+sslverify=1
+sslcacert=/etc/rhsm/ca/redhat-uep.pem
+sslclientcert=${CERT}
+sslclientkey=${KEY}
+REPO
+
+cat > /etc/yum.repos.d/microshift-fast-datapath.repo <<REPO
+[fast-datapath]
+name=Red Hat Fast Datapath for RHEL 9
+baseurl=https://cdn.redhat.com/content/dist/layered/rhel9/${ARCH}/fast-datapath/os
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+sslverify=1
+sslcacert=/etc/rhsm/ca/redhat-uep.pem
+sslclientcert=${CERT}
+sslclientkey=${KEY}
+REPO
 
 dnf install -y microshift microshift-release-info firewalld skopeo jq
 
+rm -f /etc/yum.repos.d/microshift-rhocp.repo /etc/yum.repos.d/microshift-fast-datapath.repo
 dnf clean all
 
 EOF
