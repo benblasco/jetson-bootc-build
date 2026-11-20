@@ -1,35 +1,52 @@
-FROM registry.redhat.io/rhel10/rhel-bootc:latest
+FROM registry.redhat.io/nvidia/nvidia-jetpack-for-rhel10:7.2.1_6.12.0-211.72.1_110226170017
 
-#install software
-RUN dnf -y install tmux mkpasswd
+# MicroShift 4.22 for RHEL 10.2 is published in the RHEL 9 rhocp and fast-datapath
+# repositories. Podman secrets are files, so the entitlement cert and key are
+# mounted separately and exist only for this RUN.
+RUN --mount=type=secret,id=entitlement-cert,target=/run/secrets/entitlement.pem \
+    --mount=type=secret,id=entitlement-key,target=/run/secrets/entitlement-key.pem \
+    CERT=/run/secrets/entitlement.pem && \
+    KEY=/run/secrets/entitlement-key.pem && \
+    printf '%s\n' \
+      '[rhocp-4.22]' \
+      'name=Red Hat OpenShift 4.22 for RHEL 9' \
+      'baseurl=https://cdn.redhat.com/content/dist/layered/rhel9/aarch64/rhocp/4.22/os' \
+      'enabled=1' \
+      'gpgcheck=1' \
+      'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release' \
+      'sslverify=1' \
+      'sslcacert=/etc/rhsm/ca/redhat-uep.pem' \
+      "sslclientcert=${CERT}" \
+      "sslclientkey=${KEY}" \
+      > /etc/yum.repos.d/rhocp-4.22.repo && \
+    printf '%s\n' \
+      '[fast-datapath]' \
+      'name=Red Hat Fast Datapath for RHEL 9' \
+      'baseurl=https://cdn.redhat.com/content/dist/layered/rhel9/aarch64/fast-datapath/os' \
+      'enabled=1' \
+      'gpgcheck=1' \
+      'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release' \
+      'sslverify=1' \
+      'sslcacert=/etc/rhsm/ca/redhat-uep.pem' \
+      "sslclientcert=${CERT}" \
+      "sslclientkey=${KEY}" \
+      > /etc/yum.repos.d/fast-datapath.repo && \
+    dnf install -y microshift microshift-release-info firewalld skopeo jq && \
+    systemctl enable microshift && \
+    firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
+    firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
+    dnf clean all && \
+    rm -f /etc/yum.repos.d/rhocp-4.22.repo /etc/yum.repos.d/fast-datapath.repo
 
-#configure bootc-user
-RUN pass=$(mkpasswd --method=SHA-512 --rounds=4096 redhat) && useradd -m -G wheel bootc-user -p $pass
+COPY embed_image.sh copy_embedded_images.sh /usr/bin/
+COPY microshift-copy-images.conf /usr/lib/systemd/system/microshift.service.d/microshift-copy-images.conf
+RUN chmod 755 /usr/bin/embed_image.sh /usr/bin/copy_embedded_images.sh
 
-#setup sudo to not require password
-RUN echo "%wheel        ALL=(ALL)       NOPASSWD: ALL" > /etc/sudoers.d/wheel-sudo
-
-#Using the optional heredoc format to help simplify the number of times we call RUN
-RUN <<EORUN
-set -xeuo pipefail
-
-#configure web server and relocate the webroot to be read-only and managed by this container image
-dnf -y install httpd openscap-utils scap-security-guide
-
-dnf clean all
-systemctl enable httpd
-mv /var/www /usr/share/www
-sed -ie 's,/var/www,/usr/share/www,' /etc/httpd/conf/httpd.conf
-echo "Welcome to the bootc-http instance!" > /usr/share/www/html/index.html
-
-EORUN
-
-# Harden the image using the Australian Cyber Security Centre (ACSC) ISM Official - Base profile
-# https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/secure-harden_and_secure_bootc_images_2
-RUN oscap-im --profile ism_o /usr/share/xml/scap/ssg/content/ssg-rhel10-ds.xml
-
-#clean up caches in the image and lint the container
-RUN rm /var/{cache,lib}/dnf /var/lib/rhsm /var/cache/ldconfig -rf
-RUN bootc container lint
-
-EXPOSE 80
+# Image references come from the installed microshift-release-info RPM so they
+# match this MicroShift build. --all keeps manifest-list digests intact.
+RUN --mount=type=secret,id=pullsecret,dst=/tmp/pull-secret.json \
+    images="$(jq -r '.images[]' /usr/share/microshift/release/release-"$(uname -m)".json)" && \
+    test -n "${images}" && \
+    for img in ${images}; do \
+        /usr/bin/embed_image.sh "${img}" --all ; \
+    done
