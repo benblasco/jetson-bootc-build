@@ -75,13 +75,15 @@ jobs:
 
       # Containerfile installs MicroShift from CDN repos authenticated with these certs.
       # SMDEV_CONTAINER_OFF keeps host entitlements out of the image rootfs; mount them as build secrets.
+      # Use /tmp for PEM paths: github.workspace is the host path (/home/runner/work/...), not the
+      # job container mount (/__w/...), so buildah cannot open files under github.workspace.
       - name: Stage RHSM entitlement PEMs for buildah
         run: |
           set -euo pipefail
           CERT="$(ls /etc/pki/entitlement/[0-9]*.pem | grep -v -- '-key.pem' | head -n1)"
           KEY="$(ls /etc/pki/entitlement/[0-9]*-key.pem | head -n1)"
-          cp "$CERT" "$GITHUB_WORKSPACE/entitlement-cert.pem"
-          cp "$KEY" "$GITHUB_WORKSPACE/entitlement-key.pem"
+          cp "$CERT" /tmp/entitlement-cert.pem
+          cp "$KEY" /tmp/entitlement-key.pem
 
       # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
       - name: Workaround open podman-login action issue
@@ -108,9 +110,9 @@ jobs:
           containerfiles: ${{ env.CONTAINERFILE }}
           extra-args: |
             --secret
-            id=entitlement-cert,src=${{ github.workspace }}/entitlement-cert.pem
+            id=entitlement-cert,src=/tmp/entitlement-cert.pem
             --secret
-            id=entitlement-key,src=${{ github.workspace }}/entitlement-key.pem
+            id=entitlement-key,src=/tmp/entitlement-key.pem
 
       - name: Log in to the GitHub Container registry
         uses: redhat-actions/podman-login@v2
@@ -131,5 +133,5 @@ jobs:
       - name: Clean up the subscription
         if: always()
         run: |
-          rm -f "$GITHUB_WORKSPACE/entitlement-cert.pem" "$GITHUB_WORKSPACE/entitlement-key.pem"
+          rm -f /tmp/entitlement-cert.pem /tmp/entitlement-key.pem
           subscription-manager unregister
