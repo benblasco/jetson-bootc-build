@@ -54,8 +54,8 @@ set -euo pipefail
 
 systemctl enable microshift
 
-firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
-firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
+firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16
+firewall-offline-cmd --zone=trusted --add-source=169.254.169.1
 
 EOF
 
