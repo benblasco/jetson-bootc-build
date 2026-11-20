@@ -10,9 +10,9 @@ jobs:
 
   rhel-bootc-iso-build:
     name: Build RHEL bootc ISO image with repo access
-    # ubuntu-latest can land on kernel 7.0 runners, which break osbuild
+    # Pin ubuntu-24.04-arm (not ubuntu-latest-arm) to avoid kernel drift that breaks osbuild
     # container-deploy (mount permission denied). See osbuild/osbuild#2579.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     env:
       SMDEV_CONTAINER_OFF: 1
       SOURCE_REGISTRY_HOST: registry.redhat.io
