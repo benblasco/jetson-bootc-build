@@ -1,34 +1,23 @@
-# https://osbuild.org/docs/user-guide/blueprint-reference/#disk
-# https://osbuild.org/docs/user-guide/partitioning/
-[[customizations.disk.partitions]]
-type = "lvm"
-name = "rhelvg"
-minsize = "20 GiB"
+# https://osbuild.org/docs/user-guide/blueprint-reference/
 
-[[customizations.disk.partitions.logical_volumes]]
-name = "rootlv"
-mountpoint = "/"
-label = "root"
-fs_type = "xfs"
-minsize = "10 GiB"
+[customizations.installer.kickstart]
+contents = """
+text
+keyboard us
+timezone --utc GMT
+network --bootproto=dhcp --device=link --activate --onboot=yes --hostname=jetson-orin
+bootloader --append="rhgb crashkernel=auto cloud-init=disabled pd_ignore_unused"
 
-[[customizations.disk.partitions.logical_volumes]]
-name = "homelv"
-mountpoint = "/var/home"
-label = "home"
-fs_type = "xfs"
-minsize = "5 GiB"
+rootpw --lock
+zerombr
+clearpart --all --initlabel --disklabel=gpt
+reqpart --add-boot
+part pv.01 --grow
+volgroup rhel pv.01
+logvol / --vgname=rhel --name=root --fstype=xfs --size=20480
+logvol swap --vgname=rhel --name=swap --recommended
 
-[[customizations.disk.partitions.logical_volumes]]
-name = "varloglv"
-mountpoint = "/var/log"
-label = "varlog"
-fs_type = "xfs"
-minsize = "5 GiB"
-
-[[customizations.disk.partitions.logical_volumes]]
-name = "varlv"
-mountpoint = "/var"
-#label = "var"
-fs_type = "xfs"
-minsize = "5 GiB"
+services --enabled=sshd
+user --name=admin --groups=wheel,video --plaintext --password=changeme
+reboot --eject
+"""
