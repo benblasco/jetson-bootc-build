@@ -1,6 +1,5 @@
 FROM registry.redhat.io/nvidia/nvidia-jetpack-for-rhel10:7.2.1_6.12.0-211.72.1_110226170017
 
-# Pin to RHEL 9.8 via /etc/dnf/vars/releasever and /etc/yum/vars/releasever
 # Copy container image embedding and copy scripts, and systemd drop in for copying images
 # Note: file permissions from the repo are preserved
 COPY files/ /
@@ -14,15 +13,9 @@ set -euo pipefail
 # Grab the system architecture e.g. x86_64 etc.
 ARCH="$(uname -m)"
 
-dnf config-manager --set-disabled \
-  rhel-10-for-${ARCH}-baseos-rpms \
-  rhel-10-for-${ARCH}-appstream-rpms
-
 dnf config-manager --set-enabled \
   rhocp-4.22-for-rhel-9-${ARCH}-rpms \
   fast-datapath-for-rhel-9-${ARCH}-rpms \
-  rhel-10-for-${ARCH}-baseos-eus-rpms \
-  rhel-10-for-${ARCH}-appstream-eus-rpms
 
 dnf install -y microshift microshift-release-info firewalld skopeo jq
 
