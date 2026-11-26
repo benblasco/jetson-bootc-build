@@ -1,5 +1,6 @@
 FROM registry.redhat.io/nvidia/nvidia-jetpack-for-rhel10:7.2.1_6.12.0-211.72.1_110226170017
 
+ARG MICROSHIFT_VERSION=5.0
 # Copy container image embedding and copy scripts, and systemd drop in for copying images
 # Note: file permissions from the repo are preserved
 COPY files/ /
@@ -17,9 +18,9 @@ CERT=/run/secrets/entitlement-cert
 KEY=/run/secrets/entitlement-key
 
 cat > /etc/yum.repos.d/microshift-rhocp.repo <<REPO
-[rhocp-4.22]
-name=Red Hat OpenShift 4.22 for RHEL 9
-baseurl=https://cdn.redhat.com/content/dist/layered/rhel9/${ARCH}/rhocp/4.22/os
+[rhocp-${MICROSHIFT_VERSION}]
+name=Red Hat OpenShift ${MICROSHIFT_VERSION} for RHEL 9
+baseurl=https://cdn.redhat.com/content/dist/layered/rhel9/${ARCH}/rhocp/${MICROSHIFT_VERSION}/os
 enabled=1
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
