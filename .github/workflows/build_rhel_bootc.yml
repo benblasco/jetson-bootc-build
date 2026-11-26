@@ -73,6 +73,28 @@ jobs:
       - name: Access a subscription via activation key
         run: subscription-manager register --org=${{ secrets.RHT_ORGID }} --activationkey=${{ secrets.RHT_ACT_KEY }}
 
+      # Containerfile installs MicroShift from CDN repos authenticated with these certs.
+      # SMDEV_CONTAINER_OFF keeps host entitlements out of the image rootfs; mount them as build secrets.
+      # Use /tmp for PEM paths: github.workspace is the host path (/home/runner/work/...), not the
+      # job container mount (/__w/...), so buildah cannot open files under github.workspace.
+      - name: Stage RHSM entitlement PEMs for buildah
+        run: |
+          set -euo pipefail
+          CERT="$(ls /etc/pki/entitlement/[0-9]*.pem | grep -v -- '-key.pem' | head -n1)"
+          KEY="$(ls /etc/pki/entitlement/[0-9]*-key.pem | head -n1)"
+          cp "$CERT" /tmp/entitlement-cert.pem
+          cp "$KEY" /tmp/entitlement-key.pem
+
+      # MicroShift image prefetch uses skopeo --authfile; mount as build secret (not a layer).
+      - name: Stage OpenShift pull secret for buildah
+        env:
+          OPENSHIFT_PULL_SECRET: ${{ secrets.OPENSHIFT_PULL_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$OPENSHIFT_PULL_SECRET"
+          printf '%s' "$OPENSHIFT_PULL_SECRET" > /tmp/pull-secret.json
+          chmod 600 /tmp/pull-secret.json
+
       # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
       - name: Workaround open podman-login action issue
         env:
@@ -96,6 +118,13 @@ jobs:
           image: ${{ env.DEST_IMAGE }}
           tags: ${{ env.TAGLIST }}
           containerfiles: ${{ env.CONTAINERFILE }}
+          extra-args: |
+            --secret
+            id=entitlement-cert,src=/tmp/entitlement-cert.pem
+            --secret
+            id=entitlement-key,src=/tmp/entitlement-key.pem
+            --secret
+            id=pullsecret,src=/tmp/pull-secret.json
 
       - name: Log in to the GitHub Container registry
         uses: redhat-actions/podman-login@v2
@@ -115,4 +144,6 @@ jobs:
 
       - name: Clean up the subscription
         if: always()
-        run: subscription-manager unregister
+        run: |
+          rm -f /tmp/entitlement-cert.pem /tmp/entitlement-key.pem /tmp/pull-secret.json
+          subscription-manager unregister
